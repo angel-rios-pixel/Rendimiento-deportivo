@@ -48,8 +48,8 @@ def listar_archivos():
                 "and trashed=false"
             ),
             fields="nextPageToken, files(id,name,mimeType)",
-            page_size=100,
-            page_token=token,
+            pageSize=100,
+            pageToken=token,
         ).execute()
 
         archivos.extend(respuesta.get("files", []))
