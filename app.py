@@ -6,14 +6,105 @@ from core import db
 from core.analysis import regression,summary,interpretation
 from core.importer import extract,save_rows
 from core.report import create_pdf
+from core.google_sheets import listar_archivos, listar_pestanas, leer_pestana
 
 st.set_page_config(page_title='Rendimiento Deportivo',page_icon='🏋️',layout='wide')
 db.init()
 st.markdown('''<style>.block-container{padding-top:1.5rem}div[data-testid="stMetric"]{background:#14283e;color:white;border-radius:12px;padding:14px}div[data-testid="stMetric"] label{color:#cbd5e1}</style>''',unsafe_allow_html=True)
 st.title('🏋️ Plataforma de Rendimiento Deportivo')
 st.caption('Evaluación, monitorización y análisis longitudinal | Versión 1.0')
-page=st.sidebar.radio('Navegación',['Panel del deportista','Importar Excel','Registrar evaluación','Editar evaluaciones','Comparar deportistas','Gestionar deportistas'])
+page = st.sidebar.radio(
+    'Navegación',
+    [
+        'Panel del deportista',
+        'Importar Excel',
+        'Google Sheets',
+        'Registrar evaluación',
+        'Editar evaluaciones',
+        'Comparar deportistas',
+        'Gestionar deportistas'
+    ]
+)
 a=db.athletes()
+# ==========================================
+# CONEXIÓN CON GOOGLE SHEETS
+# ==========================================
+
+if page == 'Google Sheets':
+
+    st.header("📊 Evaluaciones desde Google Sheets")
+
+    st.write(
+        "Consulta las evaluaciones registradas "
+        "en tu carpeta de Google Drive."
+    )
+
+    if st.button("🔄 Sincronizar Google Sheets"):
+        listar_archivos.clear()
+        listar_pestanas.clear()
+        leer_pestana.clear()
+        st.rerun()
+
+    try:
+        archivos = listar_archivos()
+
+        if not archivos:
+            st.warning(
+                "No se encontraron archivos de Google Sheets "
+                "en la carpeta configurada."
+            )
+
+        else:
+            st.success(
+                f"Se encontraron {len(archivos)} archivos."
+            )
+
+            opciones = {
+                archivo["name"]: archivo["id"]
+                for archivo in archivos
+            }
+
+            nombre = st.selectbox(
+                "Selecciona un archivo",
+                list(opciones.keys())
+            )
+
+            archivo_id = opciones[nombre]
+
+            pestanas = listar_pestanas(archivo_id)
+
+            if pestanas:
+                pestana = st.selectbox(
+                    "Selecciona una pestaña",
+                    pestanas
+                )
+
+                datos = leer_pestana(
+                    archivo_id,
+                    pestana
+                )
+
+                st.subheader("Resultados registrados")
+
+                st.dataframe(
+                    datos,
+                    use_container_width=True
+                )
+
+                st.write(
+                    f"Total de registros: {len(datos)}"
+                )
+
+            else:
+                st.info(
+                    "Este archivo no contiene pestañas disponibles."
+                )
+
+    except Exception as error:
+        st.error(
+            "No se pudo conectar con Google Sheets."
+        )
+        st.exception(error)
 
 def choose_athlete(key='athlete'):
     if a.empty:st.info('Primero crea un deportista en Gestionar deportistas.');st.stop()
