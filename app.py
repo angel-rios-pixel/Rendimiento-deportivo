@@ -26,103 +26,186 @@ page = st.sidebar.radio(
     ]
 )
 a=db.athletes()
-# ==========================================
-# CONEXIÓN CON GOOGLE SHEETS
-# ==========================================
 
 if page == 'Google Sheets':
+    import io
 
-    st.header("📊 Evaluaciones desde Google Sheets")
-
+    st.header("📊 Importar evaluaciones desde Google Sheets")
     st.write(
-        "Consulta las evaluaciones registradas "
-        "en tu carpeta de Google Drive."
+        "Selecciona un archivo y un deportista "
+        "para importar sus mediciones."
     )
 
     if st.button("🔄 Sincronizar Google Sheets"):
         listar_archivos.clear()
         listar_pestanas.clear()
         leer_pestana.clear()
+        st.session_state.pop("google_import", None)
         st.rerun()
 
     try:
         archivos = listar_archivos()
 
         if not archivos:
-            st.warning(
-                "No se encontraron archivos de Google Sheets "
-                "en la carpeta configurada."
-            )
+            st.warning("No se encontraron archivos en Google Drive.")
 
         else:
-            st.success(
-                f"Se encontraron {len(archivos)} archivos."
-            )
+            st.success(f"Se encontraron {len(archivos)} archivos.")
 
             opciones = {
-                archivo["name"]: archivo["id"]
-                for archivo in archivos
+                f"{x['name']} ({x['id']})": x["id"]
+                for x in archivos
             }
 
             nombre = st.selectbox(
-                "Selecciona un archivo",
+                "Archivo de Google Sheets",
                 list(opciones.keys())
             )
-
             archivo_id = opciones[nombre]
 
             pestanas = listar_pestanas(archivo_id)
 
-            if pestanas:
+            if not pestanas:
+                st.warning("El archivo no contiene pestañas.")
+
+            else:
                 pestana = st.selectbox(
-                    "Selecciona una pestaña",
+                    "Pestaña para visualizar",
                     pestanas
                 )
 
-                datos = leer_pestana(
-                    archivo_id,
-                    pestana
-                )
+                datos = leer_pestana(archivo_id, pestana)
 
                 st.subheader("Resultados registrados")
+                st.dataframe(datos, use_container_width=True)
+                st.caption(f"Filas visibles: {len(datos)}")
 
-                st.dataframe(
-                    datos,
-                    use_container_width=True
-                )
-                
-import io
+                st.divider()
+                st.subheader("📥 Importar mediciones")
 
-buffer = io.BytesIO()
+                if a.empty:
+                    st.warning(
+                        "Primero registra un deportista "
+                        "en 'Gestionar deportistas'."
+                    )
 
-with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-    datos.to_excel(
-        writer,
-        sheet_name="Evaluaciones",
-        index=False
-    )
+                else:
+                    atletas = {
+                        int(r["id"]): f'{r["name"]} · {r["club"]}'
+                        for _, r in a.iterrows()
+                    }
 
-st.download_button(
-    "📥 Descargar evaluación en Excel",
-    data=buffer.getvalue(),
-    file_name="evaluacion_google_sheets.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
+                    aid = st.selectbox(
+                        "Selecciona el deportista",
+                        list(atletas.keys()),
+                        format_func=lambda x: atletas[x],
+                        key="google_athlete"
+                    )
 
+                    st.info(
+                        "Se revisarán todas las pestañas "
+                        "del archivo seleccionado. Solo se "
+                        "importarán los formatos reconocidos."
+                    )
 
-                st.write(
-                    f"Total de registros: {len(datos)}"
-                )
+                    if st.button("🔍 Revisar mediciones"):
+                        with st.spinner("Analizando evaluaciones..."):
+                            buffer = io.BytesIO()
 
-            else:
-                st.info(
-                    "Este archivo no contiene pestañas disponibles."
-                )
+                            with pd.ExcelWriter(
+                                buffer,
+                                engine="openpyxl"
+                            ) as writer:
+                                for hoja in pestanas:
+                                    tabla = leer_pestana(
+                                        archivo_id, hoja
+                                    )
+                                    tabla.to_excel(
+                                        writer,
+                                        sheet_name=hoja,
+                                        index=False
+                                    )
+
+                            filas, avisos = extract(
+                                buffer.getvalue(), aid
+                            )
+
+                            st.session_state["google_import"] = {
+                                "archivo": archivo_id,
+                                "deportista": aid,
+                                "filas": filas,
+                                "avisos": avisos
+                            }
+
+                    pendiente = st.session_state.get(
+                        "google_import"
+                    )
+
+                    if pendiente and (
+                        pendiente["archivo"] == archivo_id
+                        and pendiente["deportista"] == aid
+                    ):
+                        filas = pendiente["filas"]
+
+                        st.write(
+                            f"Mediciones detectadas: **{len(filas)}**"
+                        )
+
+                        for aviso in pendiente["avisos"]:
+                            st.warning(aviso)
+
+                        if filas:
+                            vista = pd.DataFrame(filas)
+
+                            st.dataframe(
+                                vista[
+                                    [
+                                        "date",
+                                        "kind",
+                                        "protocol",
+                                        "load_kg",
+                                        "value",
+                                        "unit"
+                                    ]
+                                ],
+                                use_container_width=True
+                            )
+
+                            confirmar = st.checkbox(
+                                "He revisado las mediciones "
+                                "y confirmo su importación."
+                            )
+
+                            if st.button(
+                                "📥 Importar evaluaciones",
+                                disabled=not confirmar
+                            ):
+                                guardadas, errores = save_rows(filas)
+
+                                st.success(
+                                    f"{guardadas} mediciones "
+                                    "nuevas importadas."
+                                )
+
+                                if errores:
+                                    st.error(
+                                        "Algunas mediciones fallaron: "
+                                        + "; ".join(errores[:5])
+                                    )
+
+                                st.session_state.pop(
+                                    "google_import", None
+                                )
+
+                        else:
+                            st.warning(
+                                "No se detectaron mediciones "
+                                "compatibles con los formatos "
+                                "actuales del importador."
+                            )
 
     except Exception as error:
-        st.error(
-            "No se pudo conectar con Google Sheets."
-        )
+        st.error("Error al procesar Google Sheets.")
         st.exception(error)
 
 def choose_athlete(key='athlete'):
