@@ -90,6 +90,25 @@ if page == 'Google Sheets':
                     datos,
                     use_container_width=True
                 )
+                
+import io
+
+buffer = io.BytesIO()
+
+with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+    datos.to_excel(
+        writer,
+        sheet_name="Evaluaciones",
+        index=False
+    )
+
+st.download_button(
+    "📥 Descargar evaluación en Excel",
+    data=buffer.getvalue(),
+    file_name="evaluacion_google_sheets.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+
 
                 st.write(
                     f"Total de registros: {len(datos)}"
