@@ -5,3 +5,6 @@ plotly>=5.20,<7
 openpyxl>=3.1,<4
 reportlab>=4.0,<5
 pytest>=8,<10
+gspread
+google-auth
+google-api-python-client
